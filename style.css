@@ -1,0 +1,44 @@
+:root {
+    --bg-color: #fdf6e3; /* Creamy background */
+    --text-color: #586e75; /* Soft dark text */
+    --canvas-bg: #ffffff;
+    --accent-color: #ff6b6b; /* Soft red for title */
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Fredoka One', cursive;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.game-container {
+    text-align: center;
+}
+
+h1 {
+    color: var(--accent-color);
+    font-size: 3rem;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 0px #eee;
+}
+
+canvas {
+    background-color: var(--canvas-bg);
+    border-radius: 20px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    display: block;
+    margin: 0 auto;
+}
+
+.instructions {
+    margin-top: 15px;
+    font-size: 1.2rem;
+    color: #839496;
+}
