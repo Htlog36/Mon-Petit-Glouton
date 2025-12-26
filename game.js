@@ -1,7 +1,8 @@
 /**
  * Le Petit Glouton - Game Logic
  * Features: Levels, Moving Walls, Smart Ghosts, Teleporters, Power Pellets, Audio, High Score,
- *           Kawaii Character, VFX, Mobile Support, Menus, Game Modes, Special Enemies.
+ *           Kawaii Character, VFX, Mobile Support, Menus, Game Modes, Special Enemies,
+ *           Skins, Leaderboard, Achievements, Dynamic Music, Bonuses.
  */
 
 const MAP_LAYOUTS = [
@@ -65,6 +66,9 @@ class SoundManager {
     constructor() {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         this.enabled = true;
+        this.bgmOscs = [];
+        this.bgmTimer = null;
+        this.tempo = 200;
     }
     resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
     playTone(freq, type, duration, vol = 0.1) {
@@ -83,44 +87,61 @@ class SoundManager {
     playWaka() { this.playTone(200, 'triangle', 0.1, 0.1); }
     playEatGhost() { this.playTone(600, 'square', 0.1, 0.2); setTimeout(() => this.playTone(800, 'square', 0.2, 0.2), 100); }
     playEatPower() { this.playTone(400, 'sine', 0.3, 0.2); setTimeout(() => this.playTone(600, 'sine', 0.3, 0.2), 150); }
-    playDie() { for (let i = 0; i < 10; i++) setTimeout(() => this.playTone(400 - i * 40, 'sawtooth', 0.1, 0.2), i * 50); }
-    playWin() { [300, 400, 500, 600, 800].forEach((freq, i) => setTimeout(() => this.playTone(freq, 'square', 0.2, 0.1), i * 100)); }
+    playDie() { this.stopMusic(); for (let i = 0; i < 10; i++) setTimeout(() => this.playTone(400 - i * 40, 'sawtooth', 0.1, 0.2), i * 50); }
+    playWin() { this.stopMusic();[300, 400, 500, 600, 800].forEach((freq, i) => setTimeout(() => this.playTone(freq, 'square', 0.2, 0.1), i * 100)); }
     playFruit() { this.playTone(1000, 'sine', 0.1, 0.3); setTimeout(() => this.playTone(1500, 'sine', 0.2, 0.3), 100); }
+    playBonus() { this.playTone(1200, 'square', 0.1, 0.2); setTimeout(() => this.playTone(1800, 'square', 0.2, 0.2), 100); }
+
+    startMusic() {
+        if (!this.enabled || this.bgmTimer) return;
+        let note = 0;
+        const notes = [150, 0, 150, 0, 200, 0, 180, 0];
+        const playStep = () => {
+            if (notes[note] > 0) this.playTone(notes[note], 'triangle', 0.1, 0.05);
+            note = (note + 1) % notes.length;
+            this.bgmTimer = setTimeout(playStep, this.tempo);
+        };
+        playStep();
+    }
+    stopMusic() {
+        if (this.bgmTimer) { clearTimeout(this.bgmTimer); this.bgmTimer = null; }
+    }
+    setTempo(fast) { this.tempo = fast ? 150 : 250; }
 }
 
 class Particle {
     constructor(x, y, color) {
-        this.x = x;
-        this.y = y;
-        this.color = color;
+        this.x = x; this.y = y; this.color = color;
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 2 + 1;
-        this.vx = Math.cos(angle) * speed;
-        this.vy = Math.sin(angle) * speed;
-        this.life = 60;
-        this.size = Math.random() * 3 + 2;
+        this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+        this.life = 60; this.size = Math.random() * 3 + 2;
     }
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.life--;
-        this.size *= 0.95;
+    update() { this.x += this.vx; this.y += this.vy; this.life--; this.size *= 0.95; }
+    draw(ctx) { ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill(); }
+}
+
+class Bonus {
+    constructor(x, y, type) {
+        this.x = x; this.y = y; this.type = type; // 'SPEED', 'ICE', 'SHIELD'
+        this.life = 600; // 10 seconds to pick up
     }
     draw(ctx) {
-        ctx.fillStyle = this.color;
+        ctx.save();
+        ctx.translate(this.x, this.y);
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        if (this.type === 'SPEED') { ctx.fillStyle = '#FFEB3B'; ctx.moveTo(0, -8); ctx.lineTo(5, 0); ctx.lineTo(0, 8); ctx.lineTo(-5, 0); } // Lightning shape-ish
+        else if (this.type === 'ICE') { ctx.fillStyle = '#00FFFF'; ctx.rect(-5, -5, 10, 10); } // Cube
+        else if (this.type === 'SHIELD') { ctx.fillStyle = '#00FF00'; ctx.arc(0, 0, 6, 0, Math.PI * 2); } // Circle
         ctx.fill();
+        ctx.restore();
     }
 }
 
 class GameMap {
     constructor(cols, rows, tileSize, layoutIndex) {
-        this.cols = cols;
-        this.rows = rows;
-        this.tileSize = tileSize;
-        this.grid = [];
-        this.layoutIndex = layoutIndex;
+        this.cols = cols; this.rows = rows; this.tileSize = tileSize;
+        this.grid = []; this.layoutIndex = layoutIndex;
         this.generateLevel();
     }
     generateLevel() {
@@ -128,7 +149,7 @@ class GameMap {
         this.grid = layout.map(row => [...row]);
     }
     isWall(col, row) {
-        if (row === 6 && (col < 0 || col >= this.cols)) return false; // Tunnel
+        if (row === 6 && (col < 0 || col >= this.cols)) return false;
         if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return true;
         return this.grid[row][col] === 1;
     }
@@ -142,58 +163,44 @@ class GameMap {
         }
         return 0;
     }
-    spawnFruit() {
-        if (this.grid[7][7] === 0) { this.grid[7][7] = 4; return true; }
-        return false;
-    }
+    spawnFruit() { if (this.grid[7][7] === 0) { this.grid[7][7] = 4; return true; } return false; }
     draw(ctx) {
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
                 const tile = this.grid[r][c];
-                const x = c * this.tileSize;
-                const y = r * this.tileSize;
+                const x = c * this.tileSize; const y = r * this.tileSize;
                 if (tile === 1) {
                     ctx.fillStyle = '#89CFF0';
-                    this.roundRect(ctx, x + 2, y + 2, this.tileSize - 4, this.tileSize - 4, 8, true);
+                    ctx.beginPath(); ctx.roundRect(x + 2, y + 2, this.tileSize - 4, this.tileSize - 4, 8); ctx.fill();
                 } else if (tile === 2) {
-                    ctx.fillStyle = '#FFD700';
-                    ctx.beginPath(); ctx.arc(x + this.tileSize / 2, y + this.tileSize / 2, this.tileSize / 6, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = '#FFD700'; ctx.beginPath(); ctx.arc(x + this.tileSize / 2, y + this.tileSize / 2, this.tileSize / 6, 0, Math.PI * 2); ctx.fill();
                 } else if (tile === 3) {
-                    ctx.fillStyle = '#FFD700';
-                    ctx.beginPath(); ctx.arc(x + this.tileSize / 2, y + this.tileSize / 2, this.tileSize / 3, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = '#FFD700'; ctx.beginPath(); ctx.arc(x + this.tileSize / 2, y + this.tileSize / 2, this.tileSize / 3, 0, Math.PI * 2); ctx.fill();
                 } else if (tile === 4) {
-                    ctx.fillStyle = '#FF0000';
-                    ctx.beginPath(); ctx.arc(x + this.tileSize / 2, y + this.tileSize / 2 + 2, this.tileSize / 4, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = '#FF0000'; ctx.beginPath(); ctx.arc(x + this.tileSize / 2, y + this.tileSize / 2 + 2, this.tileSize / 4, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = '#00FF00'; ctx.fillRect(x + this.tileSize / 2 - 1, y + 4, 2, 10);
                 }
             }
         }
     }
-    roundRect(ctx, x, y, width, height, radius, fill) {
-        if (typeof radius === 'undefined') radius = 5;
-        ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius); ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height); ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius); ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y); ctx.closePath(); if (fill) ctx.fill();
-    }
 }
 
 class Player {
-    constructor(map, tileSize) {
-        this.map = map;
-        this.tileSize = tileSize;
+    constructor(map, tileSize, skin) {
+        this.map = map; this.tileSize = tileSize; this.skin = skin;
         this.resetPosition();
-        this.speed = 2.5;
+        this.baseSpeed = 2.5; this.speed = this.baseSpeed;
         this.nextDir = { x: 0, y: 0 };
-        this.mouthOpen = 0;
-        this.mouthSpeed = 0.1;
+        this.mouthOpen = 0; this.mouthSpeed = 0.1;
+        this.shielded = false;
     }
     resetPosition() {
         this.x = 1 * this.tileSize + this.tileSize / 2;
         this.y = 1 * this.tileSize + this.tileSize / 2;
         this.dir = { x: 0, y: 0 };
         this.radius = this.tileSize / 2 - 4;
+        this.speed = this.baseSpeed;
+        this.shielded = false;
     }
     update() {
         const col = Math.floor(this.x / this.tileSize);
@@ -209,14 +216,12 @@ class Player {
             this.x = centerX; this.y = centerY;
             if (this.nextDir.x !== 0 || this.nextDir.y !== 0) {
                 if (!this.map.isWall(col + this.nextDir.x, row + this.nextDir.y)) {
-                    this.dir = { ...this.nextDir };
-                    this.nextDir = { x: 0, y: 0 };
+                    this.dir = { ...this.nextDir }; this.nextDir = { x: 0, y: 0 };
                 }
             }
             if (this.map.isWall(col + this.dir.x, row + this.dir.y)) this.dir = { x: 0, y: 0 };
         }
-        this.x += this.dir.x * this.speed;
-        this.y += this.dir.y * this.speed;
+        this.x += this.dir.x * this.speed; this.y += this.dir.y * this.speed;
         this.mouthOpen += this.mouthSpeed;
         if (this.mouthOpen > 0.2 * Math.PI || this.mouthOpen < 0) this.mouthSpeed = -this.mouthSpeed;
     }
@@ -224,13 +229,38 @@ class Player {
         ctx.save();
         ctx.translate(this.x, this.y);
         if (this.dir.x === -1) ctx.scale(-1, 1);
-        ctx.fillStyle = '#FFB7B2'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); // Body
-        ctx.fillStyle = '#FFB7B2'; ctx.beginPath(); ctx.moveTo(-10, -10); ctx.lineTo(-15, -22); ctx.lineTo(-5, -14); ctx.fill(); // Left Ear
-        ctx.beginPath(); ctx.moveTo(10, -10); ctx.lineTo(15, -22); ctx.lineTo(5, -14); ctx.fill(); // Right Ear
-        ctx.fillStyle = '#FF6961'; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.arc(-8, 2, 3, 0, Math.PI * 2); ctx.arc(8, 2, 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1.0; // Blush
-        ctx.fillStyle = '#4A4A4A'; ctx.beginPath(); ctx.arc(-6, -4, 2.5, 0, Math.PI * 2); ctx.arc(6, -4, 2.5, 0, Math.PI * 2); ctx.fill(); // Eyes
-        ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(-5, -5, 1, 0, Math.PI * 2); ctx.arc(7, -5, 1, 0, Math.PI * 2); ctx.fill(); // Sparkle
-        ctx.fillStyle = '#9E2A2B'; ctx.beginPath(); const mouthSize = 2 + Math.sin(this.mouthOpen * 5) * 2; ctx.arc(0, 5, mouthSize, 0, Math.PI * 2); ctx.fill(); // Mouth
+
+        // Shield Effect
+        if (this.shielded) {
+            ctx.strokeStyle = '#00FF00'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, this.radius + 2, 0, Math.PI * 2); ctx.stroke();
+        }
+
+        if (this.skin === 'ROBOT') {
+            ctx.fillStyle = '#A0A0A0'; ctx.fillRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2); // Body
+            ctx.fillStyle = '#FF0000'; ctx.fillRect(-2, -this.radius - 5, 4, 5); // Antenna
+            ctx.fillStyle = '#00FF00'; ctx.fillRect(-10, -5, 6, 6); ctx.fillRect(4, -5, 6, 6); // Eyes
+            ctx.fillStyle = '#000'; ctx.fillRect(-5, 5, 10, 2); // Mouth
+        } else if (this.skin === 'RABBIT') {
+            ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); // Body
+            ctx.beginPath(); ctx.ellipse(-5, -15, 4, 10, -0.2, 0, Math.PI * 2); ctx.fill(); // Left Ear
+            ctx.beginPath(); ctx.ellipse(5, -15, 4, 10, 0.2, 0, Math.PI * 2); ctx.fill(); // Right Ear
+            ctx.fillStyle = '#FF6961'; ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI * 2); ctx.fill(); // Nose
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-6, -4, 2, 0, Math.PI * 2); ctx.arc(6, -4, 2, 0, Math.PI * 2); ctx.fill(); // Eyes
+        } else if (this.skin === 'DOG') {
+            ctx.fillStyle = '#D2691E'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); // Body
+            ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.ellipse(-12, 0, 4, 8, 0, 0, Math.PI * 2); ctx.fill(); // Left Ear
+            ctx.beginPath(); ctx.ellipse(12, 0, 4, 8, 0, 0, Math.PI * 2); ctx.fill(); // Right Ear
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-6, -4, 2, 0, Math.PI * 2); ctx.arc(6, -4, 2, 0, Math.PI * 2); ctx.fill(); // Eyes
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0, 2, 3, 0, Math.PI * 2); ctx.fill(); // Nose
+        } else { // CAT (Default)
+            ctx.fillStyle = '#FFB7B2'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); // Body
+            ctx.fillStyle = '#FFB7B2'; ctx.beginPath(); ctx.moveTo(-10, -10); ctx.lineTo(-15, -22); ctx.lineTo(-5, -14); ctx.fill(); // Left Ear
+            ctx.beginPath(); ctx.moveTo(10, -10); ctx.lineTo(15, -22); ctx.lineTo(5, -14); ctx.fill(); // Right Ear
+            ctx.fillStyle = '#FF6961'; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.arc(-8, 2, 3, 0, Math.PI * 2); ctx.arc(8, 2, 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1.0; // Blush
+            ctx.fillStyle = '#4A4A4A'; ctx.beginPath(); ctx.arc(-6, -4, 2.5, 0, Math.PI * 2); ctx.arc(6, -4, 2.5, 0, Math.PI * 2); ctx.fill(); // Eyes
+            ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(-5, -5, 1, 0, Math.PI * 2); ctx.arc(7, -5, 1, 0, Math.PI * 2); ctx.fill(); // Sparkle
+            ctx.fillStyle = '#9E2A2B'; ctx.beginPath(); const mouthSize = 2 + Math.sin(this.mouthOpen * 5) * 2; ctx.arc(0, 5, mouthSize, 0, Math.PI * 2); ctx.fill(); // Mouth
+        }
         ctx.restore();
     }
 }
@@ -273,21 +303,29 @@ class Ghost {
         this.color = color; this.radius = tileSize / 2 - 4;
         this.normalSpeed = speed; this.speed = speed;
         this.dir = { x: 0, y: 0 }; this.behavior = behavior;
-        this.scared = false; this.changeDirection();
+        this.scared = false; this.frozen = false; this.changeDirection();
     }
     changeDirection() {
         const dirs = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
         this.dir = dirs[Math.floor(Math.random() * dirs.length)];
     }
-    resetPosition() { this.x = this.spawnX; this.y = this.spawnY; this.scared = false; this.speed = this.normalSpeed; this.changeDirection(); }
-    setScared(isScared) { this.scared = isScared; this.speed = isScared ? this.normalSpeed * 0.5 : (this.behavior === 'WALL_PASS' ? this.normalSpeed * 0.5 : this.normalSpeed); }
+    resetPosition() { this.x = this.spawnX; this.y = this.spawnY; this.scared = false; this.frozen = false; this.speed = this.normalSpeed; this.changeDirection(); }
+    setScared(isScared) { this.scared = isScared; this.updateSpeed(); }
+    setFrozen(isFrozen) { this.frozen = isFrozen; this.updateSpeed(); }
+    updateSpeed() {
+        if (this.frozen) this.speed = 0;
+        else if (this.scared) this.speed = this.normalSpeed * 0.5;
+        else if (this.behavior === 'WALL_PASS') this.speed = this.normalSpeed * 0.5;
+        else this.speed = this.normalSpeed;
+    }
     update(player) {
+        if (this.frozen) return;
         if (this.x < -this.tileSize / 2) this.x = this.map.cols * this.tileSize + this.tileSize / 2;
         else if (this.x > this.map.cols * this.tileSize + this.tileSize / 2) this.x = -this.tileSize / 2;
 
         if (this.behavior === 'SLEEP') {
             const distToPlayer = Math.sqrt((this.x - player.x) ** 2 + (this.y - player.y) ** 2);
-            if (distToPlayer > 5 * this.tileSize) return; // Sleep
+            if (distToPlayer > 5 * this.tileSize) return;
         }
 
         const col = Math.floor(this.x / this.tileSize);
@@ -301,7 +339,6 @@ class Ghost {
             const dirs = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
             let validDirs = dirs.filter(d => {
                 if (this.behavior === 'WALL_PASS') {
-                    // Check bounds only
                     const nc = col + d.x; const nr = row + d.y;
                     return nc >= 0 && nc < this.map.cols && nr >= 0 && nr < this.map.rows;
                 }
@@ -335,7 +372,7 @@ class Ghost {
         this.x += this.dir.x * this.speed; this.y += this.dir.y * this.speed;
     }
     draw(ctx) {
-        ctx.fillStyle = this.scared ? '#0000FF' : this.color;
+        ctx.fillStyle = this.scared ? '#0000FF' : (this.frozen ? '#00FFFF' : this.color);
         if (this.behavior === 'WALL_PASS' && !this.scared) ctx.globalAlpha = 0.6;
         ctx.beginPath(); ctx.arc(this.x, this.y - 2, this.radius, Math.PI, 0);
         ctx.lineTo(this.x + this.radius, this.y + this.radius);
@@ -372,10 +409,25 @@ class Game {
         this.ctx = this.canvas.getContext('2d');
         this.tileSize = 40; this.cols = 15; this.rows = 15;
         this.sound = new SoundManager();
-        this.highScore = parseInt(localStorage.getItem('highScore')) || 0;
-        this.state = 'MENU'; // MENU, PLAYING, PAUSED, GAMEOVER, WIN
-        this.gameMode = 'CLASSIC'; // CLASSIC, TIME_ATTACK, NIGHT
-        this.menuSelection = 0; // 0: Classic, 1: Time, 2: Night
+        this.state = 'MENU';
+        this.gameMode = 'CLASSIC';
+        this.menuSelection = 0;
+
+        // Skins
+        this.skins = ['CAT', 'DOG', 'RABBIT', 'ROBOT'];
+        this.skinIndex = 0;
+
+        // Leaderboard
+        this.highScores = JSON.parse(localStorage.getItem('leaderboard')) || [];
+
+        // Achievements
+        this.achievements = JSON.parse(localStorage.getItem('achievements')) || {
+            'PACIFIST': { name: 'Pacifiste', desc: 'Niveau sans manger de fantôme', unlocked: false },
+            'GOURMAND': { name: 'Gourmand', desc: 'Manger un fruit', unlocked: false },
+            'FLASH': { name: 'Flash', desc: 'Niveau en < 45s', unlocked: false }
+        };
+        this.achievementQueue = [];
+
         this.particles = [];
         this.shakeTimer = 0;
 
@@ -385,15 +437,14 @@ class Game {
     }
 
     initInput() {
-        console.log("Initializing input...");
         window.addEventListener('keydown', (e) => {
-            console.log("Key pressed:", e.key, "State:", this.state);
             if (this.state === 'MENU') {
                 if (e.key === 'ArrowUp') { e.preventDefault(); this.menuSelection = (this.menuSelection - 1 + 3) % 3; }
                 if (e.key === 'ArrowDown') { e.preventDefault(); this.menuSelection = (this.menuSelection + 1) % 3; }
+                if (e.key === 'ArrowLeft') { e.preventDefault(); this.skinIndex = (this.skinIndex - 1 + this.skins.length) % this.skins.length; }
+                if (e.key === 'ArrowRight') { e.preventDefault(); this.skinIndex = (this.skinIndex + 1) % this.skins.length; }
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    console.log("Starting game from keyboard...");
                     this.sound.resume();
                     this.startGame();
                 }
@@ -408,33 +459,19 @@ class Game {
             } else if (this.state === 'PAUSED') {
                 if (e.key === 'p' || e.key === 'P') this.state = 'PLAYING';
             } else if (this.state === 'GAMEOVER' || this.state === 'WIN') {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    this.state = 'MENU';
-                }
+                if (e.key === 'Enter' || e.key === ' ') this.state = 'MENU';
             }
         });
 
-        // Mouse Click
         this.canvas.addEventListener('click', (e) => {
-            console.log("Canvas clicked. State:", this.state);
-            if (this.state === 'MENU') {
-                console.log("Starting game from click...");
-                this.sound.resume(); // Ensure audio starts
-                this.startGame();
-            }
-            if (this.state === 'GAMEOVER' || this.state === 'WIN') {
-                this.state = 'MENU';
-            }
+            if (this.state === 'MENU') { this.sound.resume(); this.startGame(); }
+            if (this.state === 'GAMEOVER' || this.state === 'WIN') this.state = 'MENU';
         });
 
-        // Mobile Controls
         let touchStartX = 0; let touchStartY = 0;
         this.canvas.addEventListener('touchstart', (e) => {
             touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
-            if (this.state === 'MENU') {
-                this.sound.resume();
-                this.startGame();
-            }
+            if (this.state === 'MENU') { this.sound.resume(); this.startGame(); }
             if (this.state === 'GAMEOVER' || this.state === 'WIN') this.state = 'MENU';
         });
         this.canvas.addEventListener('touchmove', (e) => {
@@ -454,12 +491,13 @@ class Game {
         const modes = ['CLASSIC', 'TIME_ATTACK', 'NIGHT'];
         this.gameMode = modes[this.menuSelection];
         this.level = 1; this.lives = 3; this.score = 0;
+        this.sound.startMusic();
         this.initLevel();
     }
 
     initLevel() {
         this.map = new GameMap(this.cols, this.rows, this.tileSize, this.level - 1);
-        this.player = new Player(this.map, this.tileSize);
+        this.player = new Player(this.map, this.tileSize, this.skins[this.skinIndex]);
 
         const baseSpeed = 2; const speedIncrement = 0.2;
         const ghostSpeed = Math.min(baseSpeed + (this.level - 1) * speedIncrement, 4.5);
@@ -485,15 +523,10 @@ class Game {
 
             let behavior = 'RANDOM';
             if (this.level >= 2 && i < Math.floor((this.level + 1) / 3)) behavior = 'CHASE';
-            // Special Enemies
             if (this.level >= 3 && i === ghostCount - 1) behavior = 'WALL_PASS';
             if (this.level >= 4 && i === ghostCount - 2) behavior = 'SLEEP';
 
             const ghost = new Ghost(this.map, this.tileSize, spawnX, spawnY, color, ghostSpeed, behavior);
-            let dirAttempts = 0;
-            while (this.map.isWall(spawnX + ghost.dir.x, spawnY + ghost.dir.y) && dirAttempts < 10 && behavior !== 'WALL_PASS') {
-                ghost.changeDirection(); dirAttempts++;
-            }
             this.ghosts.push(ghost);
         }
 
@@ -501,9 +534,12 @@ class Game {
         if (this.level >= 2) this.movingWalls.push(new MovingWall(this.tileSize, 5, 7, 9, 7, 2));
         if (this.level >= 3) this.movingWalls.push(new MovingWall(this.tileSize, 7, 5, 7, 9, 2));
 
+        this.bonuses = [];
         this.state = 'PLAYING';
-        this.floatingTexts = []; this.scaredTimer = 0; this.fruitTimer = 600;
-        this.timeLeft = 60; // 60 seconds for Time Attack
+        this.floatingTexts = []; this.scaredTimer = 0; this.fruitTimer = 600; this.bonusTimer = 900;
+        this.timeLeft = 60;
+        this.levelStartTime = Date.now();
+        this.ghostsEaten = 0;
 
         this.totalPellets = 0;
         for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) if (this.map.grid[r][c] === 2 || this.map.grid[r][c] === 3) this.totalPellets++;
@@ -513,7 +549,25 @@ class Game {
         for (let i = 0; i < count; i++) this.particles.push(new Particle(x, y, color));
     }
 
+    unlockAchievement(id) {
+        if (!this.achievements[id].unlocked) {
+            this.achievements[id].unlocked = true;
+            localStorage.setItem('achievements', JSON.stringify(this.achievements));
+            this.achievementQueue.push(this.achievements[id].name);
+            setTimeout(() => this.achievementQueue.shift(), 3000);
+        }
+    }
+
     handleDeath() {
+        if (this.player.shielded) {
+            this.player.shielded = false;
+            this.sound.playBonus();
+            this.spawnParticles(this.player.x, this.player.y, '#00FF00', 10);
+            this.floatingTexts.push(new FloatingText(this.player.x, this.player.y, "Shield!", "#00FF00"));
+            this.ghosts.forEach(g => g.resetPosition());
+            return;
+        }
+
         this.lives--; this.sound.playDie(); this.shakeTimer = 20;
         this.spawnParticles(this.player.x, this.player.y, '#FFB7B2', 20);
         if (this.lives > 0) {
@@ -521,11 +575,25 @@ class Game {
             this.floatingTexts.push(new FloatingText(this.canvas.width / 2, this.canvas.height / 2, "Oups!", "#FF0000"));
         } else {
             this.state = 'GAMEOVER';
-            if (this.score > this.highScore) { this.highScore = this.score; localStorage.setItem('highScore', this.highScore); }
+            this.checkLeaderboard();
+        }
+    }
+
+    checkLeaderboard() {
+        const lowestScore = this.highScores.length < 5 ? 0 : this.highScores[this.highScores.length - 1].score;
+        if (this.score > lowestScore) {
+            const name = prompt("Nouveau Record ! Entre ton nom (3 lettres) :", "AAA") || "AAA";
+            this.highScores.push({ name: name.substring(0, 3).toUpperCase(), score: this.score });
+            this.highScores.sort((a, b) => b.score - a.score);
+            if (this.highScores.length > 5) this.highScores.pop();
+            localStorage.setItem('leaderboard', JSON.stringify(this.highScores));
         }
     }
 
     nextLevel() {
+        if (this.ghostsEaten === 0) this.unlockAchievement('PACIFIST');
+        if ((Date.now() - this.levelStartTime) < 45000) this.unlockAchievement('FLASH');
+
         this.level++; this.sound.playWin(); this.state = 'WIN';
     }
 
@@ -548,6 +616,32 @@ class Game {
         if (this.scaredTimer > 0) { this.scaredTimer--; if (this.scaredTimer === 0) this.ghosts.forEach(g => g.setScared(false)); }
         if (this.fruitTimer > 0) { this.fruitTimer--; if (this.fruitTimer === 0) if (this.map.spawnFruit()) this.floatingTexts.push(new FloatingText(7 * this.tileSize, 7 * this.tileSize, "Fruit!", "#FF0000")); }
 
+        if (this.bonusTimer > 0) {
+            this.bonusTimer--;
+            if (this.bonusTimer === 0) {
+                const types = ['SPEED', 'ICE', 'SHIELD'];
+                const type = types[Math.floor(Math.random() * types.length)];
+                let bx, by;
+                do { bx = Math.floor(Math.random() * this.cols); by = Math.floor(Math.random() * this.rows); } while (this.map.isWall(bx, by));
+                this.bonuses.push(new Bonus(bx * this.tileSize + this.tileSize / 2, by * this.tileSize + this.tileSize / 2, type));
+                this.bonusTimer = Math.random() * 600 + 600;
+            }
+        }
+        this.bonuses.forEach(b => b.life--);
+        this.bonuses = this.bonuses.filter(b => b.life > 0);
+
+        // Bonus Collision
+        for (let i = this.bonuses.length - 1; i >= 0; i--) {
+            const b = this.bonuses[i];
+            if (Math.sqrt((this.player.x - b.x) ** 2 + (this.player.y - b.y) ** 2) < this.tileSize / 2) {
+                this.sound.playBonus();
+                if (b.type === 'SPEED') { this.player.speed *= 1.5; setTimeout(() => this.player.speed = this.player.baseSpeed, 5000); this.floatingTexts.push(new FloatingText(this.player.x, this.player.y, "Speed!", "#FFEB3B")); }
+                else if (b.type === 'ICE') { this.ghosts.forEach(g => g.setFrozen(true)); setTimeout(() => this.ghosts.forEach(g => g.setFrozen(false)), 5000); this.floatingTexts.push(new FloatingText(this.player.x, this.player.y, "Freeze!", "#00FFFF")); }
+                else if (b.type === 'SHIELD') { this.player.shielded = true; this.floatingTexts.push(new FloatingText(this.player.x, this.player.y, "Shield!", "#00FF00")); }
+                this.bonuses.splice(i, 1);
+            }
+        }
+
         const pCol = Math.floor(this.player.x / this.tileSize); const pRow = Math.floor(this.player.y / this.tileSize);
         const eaten = this.map.eatPellet(pCol, pRow);
 
@@ -562,12 +656,16 @@ class Game {
         } else if (eaten === 4) {
             this.score += 500; this.sound.playFruit(); this.spawnParticles(this.player.x, this.player.y, '#FF0000', 10);
             this.floatingTexts.push(new FloatingText(this.player.x, this.player.y, '+500', '#FF00FF'));
+            this.unlockAchievement('GOURMAND');
         }
+
+        // Music Tempo
+        this.sound.setTempo(this.totalPellets < 10);
 
         for (let ghost of this.ghosts) {
             if (Math.sqrt((this.player.x - ghost.x) ** 2 + (this.player.y - ghost.y) ** 2) < this.tileSize / 2 + ghost.radius - 5) {
                 if (ghost.scared) {
-                    ghost.resetPosition(); this.score += 200; this.sound.playEatGhost();
+                    ghost.resetPosition(); this.score += 200; this.sound.playEatGhost(); this.ghostsEaten++;
                     this.spawnParticles(ghost.x, ghost.y, ghost.color, 15);
                     this.floatingTexts.push(new FloatingText(this.player.x, this.player.y, '+200', '#0000FF'));
                     if (this.gameMode === 'TIME_ATTACK') { this.timeLeft += 5; this.floatingTexts.push(new FloatingText(this.player.x, this.player.y - 20, '+5s', '#00FF00')); }
@@ -590,17 +688,37 @@ class Game {
         if (this.state === 'MENU') {
             this.ctx.fillStyle = '#89CFF0'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
             this.ctx.fillStyle = '#fff'; this.ctx.font = '50px "Fredoka One"'; this.ctx.textAlign = 'center';
-            this.ctx.fillText('LE PETIT GLOUTON', this.canvas.width / 2, 150);
-            this.ctx.font = '20px "Fredoka One"';
-            this.ctx.fillText('Choisir le mode :', this.canvas.width / 2, 250);
+            this.ctx.fillText('LE PETIT GLOUTON', this.canvas.width / 2, 100);
 
+            this.ctx.font = '20px "Fredoka One"';
+            this.ctx.fillText('Choisir le mode :', this.canvas.width / 2, 160);
             const modes = ['CLASSIQUE', 'CONTRE LA MONTRE', 'NUIT'];
             modes.forEach((mode, i) => {
                 this.ctx.fillStyle = i === this.menuSelection ? '#FFEB3B' : '#fff';
-                this.ctx.fillText(mode, this.canvas.width / 2, 300 + i * 40);
+                this.ctx.fillText(mode, this.canvas.width / 2, 200 + i * 30);
             });
+
             this.ctx.fillStyle = '#fff';
-            this.ctx.fillText('Appuyez sur ESPACE ou TOUCHEZ pour commencer', this.canvas.width / 2, 500);
+            this.ctx.fillText('< Skin : ' + this.skins[this.skinIndex] + ' >', this.canvas.width / 2, 320);
+
+            // Draw Skin Preview
+            this.ctx.save();
+            this.ctx.translate(this.canvas.width / 2, 360);
+            const previewPlayer = new Player(null, 40, this.skins[this.skinIndex]);
+            previewPlayer.x = 0; previewPlayer.y = 0;
+            previewPlayer.draw(this.ctx);
+            this.ctx.restore();
+
+            // Leaderboard
+            this.ctx.fillStyle = '#fff';
+            this.ctx.fillText('Meilleurs Scores :', this.canvas.width / 2, 420);
+            this.ctx.font = '16px "Fredoka One"';
+            this.highScores.forEach((s, i) => {
+                this.ctx.fillText(`${i + 1}. ${s.name} - ${s.score}`, this.canvas.width / 2, 450 + i * 20);
+            });
+
+            this.ctx.font = '20px "Fredoka One"';
+            this.ctx.fillText('Appuyez sur ESPACE ou TOUCHEZ pour commencer', this.canvas.width / 2, 580);
             this.ctx.textAlign = 'left';
             this.ctx.restore();
             return;
@@ -608,6 +726,7 @@ class Game {
 
         this.map.draw(this.ctx);
         this.movingWalls.forEach(w => w.draw(this.ctx));
+        this.bonuses.forEach(b => b.draw(this.ctx));
         this.player.draw(this.ctx);
         this.ghosts.forEach(g => g.draw(this.ctx));
         this.particles.forEach(p => p.draw(this.ctx));
@@ -624,7 +743,6 @@ class Game {
         // HUD
         this.ctx.fillStyle = '#586e75'; this.ctx.font = '20px "Fredoka One"';
         this.ctx.fillText(`Score: ${this.score}`, 10, 25);
-        this.ctx.fillText(`High Score: ${this.highScore}`, 150, 25);
         this.ctx.fillText(`Niveau: ${this.level}`, 500, 25);
         if (this.gameMode === 'TIME_ATTACK') {
             this.ctx.fillStyle = this.timeLeft < 10 ? '#FF0000' : '#586e75';
@@ -632,6 +750,18 @@ class Game {
         }
         for (let i = 0; i < this.lives; i++) {
             this.ctx.fillStyle = '#FFEB3B'; this.ctx.beginPath(); this.ctx.arc(400 + i * 25, 20, 10, 0.2 * Math.PI, 1.8 * Math.PI); this.ctx.lineTo(400 + i * 25, 20); this.ctx.fill();
+        }
+
+        // Achievement Notification
+        if (this.achievementQueue.length > 0) {
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            this.ctx.fillRect(150, 50, 300, 50);
+            this.ctx.fillStyle = '#FFD700';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText("Succès Débloqué !", 300, 70);
+            this.ctx.fillStyle = '#FFF';
+            this.ctx.fillText(this.achievementQueue[0], 300, 90);
+            this.ctx.textAlign = 'left';
         }
 
         if (this.state === 'PAUSED') {
