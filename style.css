@@ -1,8 +1,11 @@
 :root {
-    --bg-color: #fdf6e3; /* Creamy background */
-    --text-color: #586e75; /* Soft dark text */
+    --bg-color: #fdf6e3;
+    /* Creamy background */
+    --text-color: #586e75;
+    /* Soft dark text */
     --canvas-bg: #ffffff;
-    --accent-color: #ff6b6b; /* Soft red for title */
+    --accent-color: #ff6b6b;
+    /* Soft red for title */
 }
 
 body {
@@ -32,9 +35,13 @@ h1 {
 canvas {
     background-color: var(--canvas-bg);
     border-radius: 20px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
     display: block;
     margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+    touch-action: none;
+    /* Prevent browser zooming/scrolling on touch */
 }
 
 .instructions {
