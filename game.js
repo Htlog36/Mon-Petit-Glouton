@@ -710,5 +710,6 @@ loop(timestamp) {
     try { const dt = timestamp - this.lastTime; this.lastTime = timestamp; this.update(dt); this.draw(); requestAnimationFrame(this.loop); }
     catch (e) { console.error("Game Loop Error:", e); alert("Une erreur est survenue : " + e.message); }
 }
+}
 
 window.onload = () => { try { new Game(); } catch (e) { console.error(e); alert(e.message); } };
