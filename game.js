@@ -434,14 +434,22 @@ class Game {
         const bindBtn = (id, action) => {
             const btn = document.getElementById(id);
             if (!btn) return;
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
+            const handler = (e) => {
+                e.preventDefault(); // Prevent default touch behavior
+                e.stopPropagation(); // Stop event bubbling
                 if (this.state === 'MENU' || this.state === 'GAMEOVER' || this.state === 'WIN') {
-                    if (id === 'btn-a' || id === 'btn-b') { this.sound.resume(); if (this.state === 'MENU') this.startGame(); else if (this.state === 'GAMEOVER') this.state = 'MENU'; else this.initLevel(); }
+                    if (id === 'btn-a' || id === 'btn-b') {
+                        this.sound.resume();
+                        if (this.state === 'MENU') this.startGame();
+                        else if (this.state === 'GAMEOVER') this.state = 'MENU';
+                        else this.initLevel();
+                    }
                 } else if (this.state === 'PLAYING' && this.players[0]) {
                     action();
                 }
-            });
+            };
+            btn.addEventListener('touchstart', handler, { passive: false });
+            btn.addEventListener('mousedown', handler); // For testing on desktop
         };
 
         bindBtn('btn-up', () => this.players[0].nextDir = { x: 0, y: -1 });
