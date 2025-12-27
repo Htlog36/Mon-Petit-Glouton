@@ -1,4 +1,4 @@
-const CACHE_NAME = 'glouton-v1';
+const CACHE_NAME = 'glouton-v2';
 const ASSETS = [
     './',
     './index.html',
