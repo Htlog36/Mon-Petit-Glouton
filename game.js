@@ -439,8 +439,8 @@ class Game {
                 e.stopPropagation();
                 action();
             };
-            btn.addEventListener('touchstart', handler, { passive: false });
-            btn.addEventListener('mousedown', handler);
+            // Use pointerdown for better cross-device support (touch + mouse)
+            btn.addEventListener('pointerdown', handler);
         };
 
         const confirmAction = () => {
@@ -702,7 +702,7 @@ class Game {
         }
 
         this.ctx.fillStyle = '#586e75'; this.ctx.font = '20px "Fredoka One"';
-        this.ctx.fillText(`Score: ${this.score}`, 10, 25); this.ctx.fillText(`Niveau: ${this.level}`, 500, 25);
+        this.ctx.fillText(`Score: ${this.score} (P: ${this.totalPellets})`, 10, 25); this.ctx.fillText(`Niveau: ${this.level}`, 500, 25);
         if (this.gameMode === 'TIME_ATTACK') { this.ctx.fillStyle = this.timeLeft < 10 ? '#FF0000' : '#586e75'; this.ctx.fillText(`Temps: ${Math.ceil(this.timeLeft)}`, 300, 25); }
         for (let i = 0; i < this.lives; i++) { this.ctx.fillStyle = '#FFEB3B'; this.ctx.beginPath(); this.ctx.arc(400 + i * 25, 20, 10, 0.2 * Math.PI, 1.8 * Math.PI); this.ctx.lineTo(400 + i * 25, 20); this.ctx.fill(); }
 
