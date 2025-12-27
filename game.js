@@ -435,27 +435,32 @@ class Game {
             const btn = document.getElementById(id);
             if (!btn) return;
             const handler = (e) => {
-                e.preventDefault(); // Prevent default touch behavior
-                e.stopPropagation(); // Stop event bubbling
-                if (this.state === 'MENU' || this.state === 'GAMEOVER' || this.state === 'WIN') {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+
+                if (this.state === 'MENU' || this.state === 'GAMEOVER' || this.state === 'WIN' || this.state === 'STORY') {
                     if (id === 'btn-a' || id === 'btn-b') {
                         this.sound.resume();
                         if (this.state === 'MENU') this.startGame();
+                        else if (this.state === 'STORY') this.initLevel();
                         else if (this.state === 'GAMEOVER') this.state = 'MENU';
                         else this.initLevel();
                     }
-                } else if (this.state === 'PLAYING' && this.players[0]) {
+                    return;
+                }
+
+                if (this.players && this.players[0]) {
                     action();
                 }
             };
             btn.addEventListener('touchstart', handler, { passive: false });
-            btn.addEventListener('mousedown', handler); // For testing on desktop
+            btn.addEventListener('mousedown', handler);
         };
 
-        bindBtn('btn-up', () => this.players[0].nextDir = { x: 0, y: -1 });
-        bindBtn('btn-down', () => this.players[0].nextDir = { x: 0, y: 1 });
-        bindBtn('btn-left', () => this.players[0].nextDir = { x: -1, y: 0 });
-        bindBtn('btn-right', () => this.players[0].nextDir = { x: 1, y: 0 });
+        bindBtn('btn-up', () => { if (this.state === 'PLAYING') this.players[0].nextDir = { x: 0, y: -1 }; });
+        bindBtn('btn-down', () => { if (this.state === 'PLAYING') this.players[0].nextDir = { x: 0, y: 1 }; });
+        bindBtn('btn-left', () => { if (this.state === 'PLAYING') this.players[0].nextDir = { x: -1, y: 0 }; });
+        bindBtn('btn-right', () => { if (this.state === 'PLAYING') this.players[0].nextDir = { x: 1, y: 0 }; });
         bindBtn('btn-a', () => { /* Action A */ });
         bindBtn('btn-b', () => { if (this.state === 'PLAYING') this.state = 'PAUSED'; else if (this.state === 'PAUSED') this.state = 'PLAYING'; });
     }
