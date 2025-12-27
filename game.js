@@ -417,11 +417,39 @@ class Game {
                 }
             } else if (this.state === 'PAUSED') {
                 if (e.key === 'p' || e.key === 'P') this.state = 'PLAYING';
-            } else if (this.state === 'GAMEOVER' || this.state === 'WIN' || this.state === 'STORY') {
+            } else if (this.state === 'GAMEOVER') {
                 if (e.key === 'Enter' || e.key === ' ') this.state = 'MENU';
+            } else if (this.state === 'WIN') {
+                if (e.key === 'Enter' || e.key === ' ') this.initLevel();
             }
         });
-        this.canvas.addEventListener('click', () => { if (this.state === 'MENU') { this.sound.resume(); this.startGame(); } });
+
+        this.canvas.addEventListener('click', () => {
+            if (this.state === 'MENU') { this.sound.resume(); this.startGame(); }
+            if (this.state === 'GAMEOVER') this.state = 'MENU';
+            if (this.state === 'WIN') this.initLevel();
+        });
+
+        let touchStartX = 0; let touchStartY = 0;
+        this.canvas.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
+            if (this.state === 'MENU') { this.sound.resume(); this.startGame(); }
+            if (this.state === 'GAMEOVER') this.state = 'MENU';
+            if (this.state === 'WIN') this.initLevel();
+        });
+        this.canvas.addEventListener('touchmove', (e) => {
+            if (this.state !== 'PLAYING') return;
+            e.preventDefault();
+            const touchEndX = e.touches[0].clientX; const touchEndY = e.touches[0].clientY;
+            const dx = touchEndX - touchStartX; const dy = touchEndY - touchStartY;
+            if (this.players[0]) {
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    if (Math.abs(dx) > 30) this.players[0].nextDir = dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
+                } else {
+                    if (Math.abs(dy) > 30) this.players[0].nextDir = dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
+                }
+            }
+        });
     }
 
     pollGamepads() {
